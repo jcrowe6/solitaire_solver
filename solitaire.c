@@ -354,6 +354,20 @@ int can_move(t_deck* deck1, t_deck* deck2) {
     }
 }
 
+// return 1 if deck1 top card can move on top of foundation deck
+int can_foundation_move(t_deck* deck1, t_deck* foundation) {
+    t_card* d1top = deck1->top;
+    t_card* foundtop = foundation->top;
+    if (foundtop == NULL) {
+        if (d1top->value == 1) { return 1 ;}
+        else { return 0; }
+    } else if (d1top->suit == foundtop->suit && d1top->value == foundtop->value+1) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 // Given a deck on the faceup part of the tableau, find and return other faceup deck on tableau that
 // it can be moved on top of i.e. faceup->bottom can be placed on other->top
 t_deck* find_move(t_deck* faceup, t_zones* zones) {
@@ -364,6 +378,21 @@ t_deck* find_move(t_deck* faceup, t_zones* zones) {
     for (int i = 0; i<7; i++) {
         other = zones->tableau_faceup[i];
         if (faceup != other && can_move(faceup, other)) {
+            return other;
+        }
+    }
+    return NULL;
+}
+
+// Given a deck on the faceup part of the zones, find and return foundation that the top card can be moved to
+t_deck* find_foundation_move(t_deck* faceup, t_zones* zones) {
+    if (faceup->ncards == 0) {
+        return NULL;
+    }
+    t_deck* other; 
+    for (int i = 0; i<4; i++) {
+        other = zones->foundations[i];
+        if (faceup != other && can_foundation_move(faceup, other)) {
             return other;
         }
     }
@@ -389,6 +418,31 @@ int make_tableau_move(t_zones* zones) {
     return 0;
 }
 
+int make_foundation_move(t_zones* zones) {
+    t_deck* to_move = NULL;
+    t_deck* other = NULL;
+    if (zones->wastes->ncards > 0) {
+        other = find_foundation_move(zones->wastes, zones);
+        if (other != NULL) {
+            move_deck_part(zones->wastes, other, 1);
+            return 1;
+        }
+    }
+    for (int i = 0; i<7; i++) {
+        to_move = zones->tableau_faceup[i];
+        other = find_foundation_move(to_move, zones);
+        if (other != NULL) {
+            move_deck_part(to_move, other, 1);
+            // flip facedown card if possible
+            if (zones->tableau_faceup[i]->ncards == 0 && zones->tableau_facedown[i]->ncards > 0) {
+                move_deck_part(zones->tableau_facedown[i], zones->tableau_faceup[i], 1);
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
 
 int main(int argc, char **argv) {
     srand(time(NULL));
@@ -403,6 +457,10 @@ int main(int argc, char **argv) {
         print_zones(zones);
         getchar();
         make_tableau_move(zones);
+        system("cls");
+        print_zones(zones);
+        getchar();
+        make_foundation_move(zones);
     }
     
     
