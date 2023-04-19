@@ -347,7 +347,7 @@ int can_move(t_deck* deck1, t_deck* deck2) {
     t_card* d1bottom = deck1->bottom;
     t_card* d2top = deck2->top;
     if (d2top == NULL) {
-        if (d1bottom->suit == 13) { return 1 ;}
+        if (d1bottom->value == 13) { return 1 ;}
         else { return 0; }
     } else if (d1bottom->color != d2top->color && d1bottom->value == d2top->value-1) {
         return 1;
@@ -422,6 +422,11 @@ int make_tableau_move(t_zones* zones) {
         for (int i = 0; i<7; i++) { // quick little findmove for wastes
             other = zones->tableau_faceup[i];
             if (can_top_move(zones->wastes, other)) {
+                printf("move ");
+                print_card(zones->wastes->top);
+                printf(" to tableau ");
+                print_cardn(other->top);
+
                 move_deck_part(zones->wastes, other, 1);
                 return 1;
             }
@@ -431,6 +436,11 @@ int make_tableau_move(t_zones* zones) {
         to_move = zones->tableau_faceup[i];
         other = find_move(to_move, zones);
         if (other != NULL) {
+            printf("move ");
+            print_card(to_move->bottom);
+            printf(" to tableau ");
+            print_cardn(other->top);
+
             move_deck_part(to_move, other, to_move->ncards);
             // flip facedown card if possible
             if (zones->tableau_faceup[i]->ncards == 0 && zones->tableau_facedown[i]->ncards > 0) {
@@ -448,6 +458,11 @@ int make_foundation_move(t_zones* zones) {
     if (zones->wastes->ncards > 0) {
         other = find_foundation_move(zones->wastes, zones);
         if (other != NULL) {
+            printf("move ");
+            print_card(zones->wastes->top);
+            printf(" to foundation ");
+            print_cardn(other->top);
+
             move_deck_part(zones->wastes, other, 1);
             return 1;
         }
@@ -456,6 +471,11 @@ int make_foundation_move(t_zones* zones) {
         to_move = zones->tableau_faceup[i];
         other = find_foundation_move(to_move, zones);
         if (other != NULL) {
+            printf("move ");
+            print_card(to_move->top);
+            printf(" to foundation ");
+            print_cardn(other->top);
+
             move_deck_part(to_move, other, 1);
             // flip facedown card if possible
             if (zones->tableau_faceup[i]->ncards == 0 && zones->tableau_facedown[i]->ncards > 0) {
@@ -467,22 +487,30 @@ int make_foundation_move(t_zones* zones) {
     return 0;
 }
 
-void draw3(t_zones* zones) {
-    printf("draw3 called \n");
+void flip_deck(t_deck* deck) {
+    t_card* currcard = deck->top;
+    for (int i = 0; i < deck->ncards; i++) {
+        t_card* below = currcard->below;
+        currcard->below = currcard->above;
+        currcard->above = below;
+        currcard = currcard->above;
+    }
+    t_card* bot = deck->bottom;
+    deck->bottom = deck->top;
+    deck->top = bot;
+}
+
+void draw3(t_zones* zones) { 
     if (zones->draw->ncards == 0) { // if none left, flip over wastes
         printf("draw->ncards == 0. flipping over wastes \n");
         move_deck_part(zones->wastes, zones->draw, zones->wastes->ncards);
-        t_card* bot = zones->draw->bottom;
-        zones->draw->bottom = zones->draw->top;
-        zones->draw->top = bot;
+        flip_deck(zones->draw);
         return;
     }
     for (int i = 0; i < 3; i++) {
         if (zones->draw->ncards > 0) {
             printf("moving 1 card from draw to wastes... \n");
-            move_deck_part(zones->draw, zones->wastes, 1); // sometime during the game, this call sets draw top/bottom to 0
-            printf("%d\n", test_deck(zones->draw));
-            printf("%d\n", test_deck(zones->wastes));
+            move_deck_part(zones->draw, zones->wastes, 1); 
         }
     }
 }
@@ -501,8 +529,7 @@ int main(int argc, char **argv) {
     while (1) {
         system("cls");
         print_zones(zones);
-        printf("Enter: execute all tableau moves\n");
-        getchar();
+        printf("executing all tableau moves\n");
         hasmove = 1;
         tab_move = 0;
         found_move = 0;
@@ -510,23 +537,24 @@ int main(int argc, char **argv) {
             hasmove = make_tableau_move(zones);
             if (hasmove == 1) {tab_move = hasmove;}
         }
+        getchar();
         system("cls");
         print_zones(zones);
-        printf("Enter: execute all foundation moves\n");
-        getchar();
+        printf("executing all foundation moves\n");
         hasmove = 1;
         while (hasmove) {
             hasmove = make_foundation_move(zones);
             if (hasmove == 1) {found_move = hasmove;}
         }
+        getchar();
         system("cls");
         print_zones(zones);
-        printf("Tableau moved? - %d. Foundation moved? - %d\nIf both 0, Enter will draw 3\n", tab_move, found_move);
-        getchar();
+        printf("Tableau moved? - %d. Foundation moved? - %d\nIf both 0, drawing 3\n", tab_move, found_move);
         // if neither tableau or foundations had a move, draw 3 cards
         if (tab_move == 0 && found_move == 0) {
             draw3(zones);
         }
+        getchar();
     }
     
     
