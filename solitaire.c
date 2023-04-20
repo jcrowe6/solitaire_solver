@@ -6,7 +6,6 @@ typedef struct t_card {
     int value;
     int suit;
     int color;
-    int faceup; // 1 if faceup, 0 if facedown
     struct t_card* below; // pointer to card that this card is on top of, NULL if it's just sitting on the table
     struct t_card* above; // pointer to card above this card, NULL if none
 } t_card;
@@ -17,6 +16,9 @@ typedef struct t_deck {
     t_card* top;
     t_card* bottom;
     int ncards;
+
+    t_card* card_mem; // when we malloc space for all the cards, we need to save this pointer to free later
+                      // this will only be set for the draw deck, all others that start empty will just get NULL
 } t_deck;
 
 typedef struct t_zones {
@@ -37,7 +39,6 @@ t_deck* init_deck() {
             cards[pos].value = v;
             cards[pos].suit = s;
             cards[pos].color = s % 2;
-            cards[pos].faceup = 0;
             cards[pos].above = cards+pos-1;
             cards[pos].below = cards+pos+1;
             if (pos == 0) {
@@ -52,7 +53,15 @@ t_deck* init_deck() {
     deck->top = cards;
     deck->bottom = cards+51;
     deck->ncards = 52;
+    deck->card_mem = cards;
     return deck;
+}
+
+void free_deck(t_deck* deck) {
+    if (deck->card_mem != NULL) {
+        free(deck->card_mem);
+    }
+    free(deck);
 }
 
 // allocates space for and returns an empty deck
@@ -61,6 +70,7 @@ t_deck* init_empty_deck() {
     deck->top = NULL;
     deck->bottom = NULL;
     deck->ncards = 0;
+    deck->card_mem = NULL;
     return deck;
 }
 
@@ -68,13 +78,16 @@ t_deck* init_empty_deck() {
 // and places them on top of `todeck`. 
 // fromdeck should have the n+1 th card as it's top which has above->NULL, or if n equals the size of fromdeck, both top and bottom should be NULL.
 // 
-void move_deck_part(t_deck* fromdeck, t_deck* todeck, int n) {
+void 
+move_deck_part(t_deck* fromdeck, t_deck* todeck, int n) {
     t_card* move_bottom = fromdeck->top; // the bottom card of the group that is moving
     for (int i = 0; i<n-1; i++) {
         move_bottom = move_bottom->below;
     }
     // 2 cases: move_bottom->below = NULL and != NULL
     // 2 more cases, todeck->top = NULL and != NULL
+
+
     if (todeck->top == NULL) {
         if (move_bottom->below == NULL) { // from deck will be empty and todeck is empty
             // just deck changes, no card link changes.
@@ -248,6 +261,19 @@ t_zones* init_zones() {
     return zone;
 }
 
+void free_zones(t_zones* zones) {
+    free_deck(zones->draw);
+    free_deck(zones->wastes);
+    for (int i = 0; i < 7; i++) {
+        free_deck(zones->tableau_facedown[i]);
+        free_deck(zones->tableau_faceup[i]);
+    }
+    for (int i = 0; i < 4; i++) {
+        free_deck(zones->foundations[i]);
+    }
+    free(zones);
+}
+
 char suit(t_card* card) {
     if (card == NULL) {
         return 'X';
@@ -385,7 +411,10 @@ int can_foundation_move(t_deck* deck1, t_deck* foundation) {
 
 // Given a deck on the faceup part of the tableau, find and return other faceup deck on tableau that
 // it can be moved on top of i.e. faceup->bottom can be placed on other->top
-t_deck* find_move(t_deck* faceup, t_zones* zones) {
+// tab_i is the int such that faceup == zones->tableau_faceup[tab_i]
+// this was added to easily find the respective facedown deck to check if it has cards, in the case of moving a King card
+// (since if K could move without any facedown cards in it's column, we will repeatedly move K's back and forth to empty decks)
+t_deck* find_move(t_deck* faceup, t_zones* zones, int tab_i) {
     if (faceup->ncards == 0) {
         return NULL;
     }
@@ -393,6 +422,9 @@ t_deck* find_move(t_deck* faceup, t_zones* zones) {
     for (int i = 0; i<7; i++) {
         other = zones->tableau_faceup[i];
         if (faceup != other && can_move(faceup, other)) {
+            if (faceup->bottom->value == 13 && other->top == NULL && zones->tableau_facedown[tab_i]->ncards == 0) { 
+                return NULL; 
+            } // prevent pointless King moves
             return other;
         }
     }
@@ -422,10 +454,10 @@ int make_tableau_move(t_zones* zones) {
         for (int i = 0; i<7; i++) { // quick little findmove for wastes
             other = zones->tableau_faceup[i];
             if (can_top_move(zones->wastes, other)) {
-                printf("move ");
-                print_card(zones->wastes->top);
-                printf(" to tableau ");
-                print_cardn(other->top);
+                // printf("move ");
+                // print_card(zones->wastes->top);
+                // printf(" fw to tableau ");
+                // print_cardn(other->top);
 
                 move_deck_part(zones->wastes, other, 1);
                 return 1;
@@ -434,12 +466,12 @@ int make_tableau_move(t_zones* zones) {
     }
     for (int i = 0; i<7; i++) {
         to_move = zones->tableau_faceup[i];
-        other = find_move(to_move, zones);
+        other = find_move(to_move, zones, i);
         if (other != NULL) {
-            printf("move ");
-            print_card(to_move->bottom);
-            printf(" to tableau ");
-            print_cardn(other->top);
+            // printf("move ");
+            // print_card(to_move->bottom);
+            //printf(" to tableau ");
+            //print_cardn(other->top);
 
             move_deck_part(to_move, other, to_move->ncards);
             // flip facedown card if possible
@@ -458,10 +490,10 @@ int make_foundation_move(t_zones* zones) {
     if (zones->wastes->ncards > 0) {
         other = find_foundation_move(zones->wastes, zones);
         if (other != NULL) {
-            printf("move ");
-            print_card(zones->wastes->top);
-            printf(" to foundation ");
-            print_cardn(other->top);
+            //printf("move ");
+            //print_card(zones->wastes->top);
+            //printf(" to foundation ");
+            //print_cardn(other->top);
 
             move_deck_part(zones->wastes, other, 1);
             return 1;
@@ -471,10 +503,10 @@ int make_foundation_move(t_zones* zones) {
         to_move = zones->tableau_faceup[i];
         other = find_foundation_move(to_move, zones);
         if (other != NULL) {
-            printf("move ");
-            print_card(to_move->top);
-            printf(" to foundation ");
-            print_cardn(other->top);
+            //printf("move ");
+            //print_card(to_move->top);
+            //printf(" to foundation ");
+            //print_cardn(other->top);
 
             move_deck_part(to_move, other, 1);
             // flip facedown card if possible
@@ -500,65 +532,132 @@ void flip_deck(t_deck* deck) {
     deck->top = bot;
 }
 
-void draw3(t_zones* zones) { 
+// return 1 if had to flip, else 0
+int drawn(t_zones* zones, int n) { 
     if (zones->draw->ncards == 0) { // if none left, flip over wastes
-        printf("draw->ncards == 0. flipping over wastes \n");
+        // printf("draw->ncards == 0. flipping over wastes \n");
+        if (zones->wastes->ncards == 0) { return 1; }
         move_deck_part(zones->wastes, zones->draw, zones->wastes->ncards);
         flip_deck(zones->draw);
-        return;
+        return 1;
     }
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < n; i++) {
         if (zones->draw->ncards > 0) {
-            printf("moving 1 card from draw to wastes... \n");
+            // printf("moving 1 card from draw to wastes... \n");
             move_deck_part(zones->draw, zones->wastes, 1); 
         }
     }
+    return 0;
 }
 
-int main(int argc, char **argv) {
-    srand(time(NULL));
-    //deck* deck = init_deck();
-    //shuffle_deck(deck);
-    //print_deck(deck);
+int check_win(t_zones* zones) {
+    for (int i = 0; i < 4; i++) {
+        if (zones->foundations[i]->ncards != 13) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+// Loops the game actions with a simple decision tree of:
+// 1. Make all possible tableau moves
+// 2. Make all possible moves to foundations
+// 3. If 1. and 2. had no moves, draw cards. Go to 1.
+// This is an agent. But not a good one! It's winrate is about 0.0071
+int play_game(int verbose) {
     t_zones* zones = init_zones();
     fill_tableau(zones);
 
     int hasmove = 1;
     int tab_move = 0;
     int found_move = 0;
-    while (1) {
-        system("cls");
-        print_zones(zones);
-        printf("executing all tableau moves\n");
+    int win = 0;
+    int flipped = 0;
+    while (win == 0) {
+        if (verbose) {
+            system("cls");
+            print_zones(zones);
+            printf("executing all tableau moves\n");
+        }
+
         hasmove = 1;
         tab_move = 0;
         found_move = 0;
         while (hasmove) {
             hasmove = make_tableau_move(zones);
-            if (hasmove == 1) {tab_move = hasmove;}
+            if (hasmove == 1) {
+                tab_move = hasmove;
+                if (flipped == 1) { // we had to flip before but we just found a move
+                    flipped = 0;
+                }
+            }
         }
-        getchar();
-        system("cls");
-        print_zones(zones);
-        printf("executing all foundation moves\n");
+
+        if (verbose) {
+            system("cls");
+            print_zones(zones);
+            printf("executing all foundation moves\n");
+        }
+
         hasmove = 1;
         while (hasmove) {
             hasmove = make_foundation_move(zones);
-            if (hasmove == 1) {found_move = hasmove;}
+            if (hasmove == 1) {
+                found_move = hasmove;
+                if (flipped == 1) { // we had to flip before but we just found a move
+                    flipped = 0;
+                }
+            }
         }
-        getchar();
-        system("cls");
-        print_zones(zones);
-        printf("Tableau moved? - %d. Foundation moved? - %d\nIf both 0, drawing 3\n", tab_move, found_move);
-        // if neither tableau or foundations had a move, draw 3 cards
-        if (tab_move == 0 && found_move == 0) {
-            draw3(zones);
-        }
-        getchar();
-    }
-    
-    
 
+        if (zones->draw->ncards == 0 && check_win(zones)) {
+            //system("cls");
+            //print_zones(zones);
+            //free_zones(zones);
+            //printf("win! \n");
+            return 1;
+        }
+
+        if (verbose) {
+            system("cls");
+            print_zones(zones);
+            printf("Tableau moved? - %d. Foundation moved? - %d\nIf both 0, drawing 3\n", tab_move, found_move);
+        }
+
+        if (tab_move == 0 && found_move == 0) {
+            int result = drawn(zones, 3);
+            if (result == 1 && flipped == 0) {
+                flipped = 1;
+            } else if (result == 1 && flipped == 1) { // we flipped and didn't find any moves. we're stuck (?)
+                // printf("lose :< \n");
+                free_zones(zones);
+                return 0; // no win
+            }
+        }
+
+    }
+}
+
+// It is at this point I can see that the win rate of the basic strategy implemented in play_game
+// is less than 1% - when 80% of games are winnable!
+// So, we need to abstract out the decisionmaking process a bit. Could play around with different decision trees
+// and heuristics, and numerically verify what works... but that seems a bit of a lot of effort and learning about how 
+// solitaire works. but could be fun I guess..? OR I figure out how to run ~ MACHINE LEARNING ~ on this.
+// It would need to take in the board state, possibly the seen cards in the draw, and output it's action.
+// Need to read about how to do ML in problems like this...
+int main(int argc, char **argv) {
+    int verbose = 0;
+    if (argc > 1 && argv[1][0] == 'v') { verbose = 1; }
+    
+    srand(time(NULL));
+    
+    int wins = 0;
+    int ngames = 10000;
+    for (int i = 0; i < ngames; i++) {
+        wins += play_game(verbose);
+    }
+
+    printf("Won %d games out of %d\n%.4lf winrate", wins, ngames, (double) wins / (double) ngames);
     
     return 0;
 }
