@@ -78,8 +78,7 @@ t_deck* init_empty_deck() {
 // and places them on top of `todeck`. 
 // fromdeck should have the n+1 th card as it's top which has above->NULL, or if n equals the size of fromdeck, both top and bottom should be NULL.
 // 
-void 
-move_deck_part(t_deck* fromdeck, t_deck* todeck, int n) {
+void move_deck_part(t_deck* fromdeck, t_deck* todeck, int n) {
     t_card* move_bottom = fromdeck->top; // the bottom card of the group that is moving
     for (int i = 0; i<n-1; i++) {
         move_bottom = move_bottom->below;
