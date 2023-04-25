@@ -573,15 +573,15 @@ int play_game(int verbose) {
     int win = 0;
     int flipped = 0;
     while (win == 0) {
+        tab_move = 0;
+        found_move = 0;
+
+        hasmove = 1;
         if (verbose) {
             system("cls");
             print_zones(zones);
             printf("executing all tableau moves\n");
         }
-
-        hasmove = 1;
-        tab_move = 0;
-        found_move = 0;
         while (hasmove) {
             hasmove = make_tableau_move(zones);
             if (hasmove == 1) {
@@ -592,13 +592,12 @@ int play_game(int verbose) {
             }
         }
 
+        hasmove = 1;
         if (verbose) {
             system("cls");
             print_zones(zones);
             printf("executing all foundation moves\n");
         }
-
-        hasmove = 1;
         while (hasmove) {
             hasmove = make_foundation_move(zones);
             if (hasmove == 1) {
@@ -628,7 +627,9 @@ int play_game(int verbose) {
             if (result == 1 && flipped == 0) {
                 flipped = 1;
             } else if (result == 1 && flipped == 1) { // we flipped and didn't find any moves. we're stuck (?)
-                // printf("lose :< \n");
+                printf("lose :< \n");
+                print_zones(zones);
+                getchar();
                 free_zones(zones);
                 return 0; // no win
             }
