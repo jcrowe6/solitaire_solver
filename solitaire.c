@@ -165,6 +165,15 @@ void print_deck(t_deck* deck) {
     }
 }
 
+void output_deck(t_deck* deck) {
+    t_card* iter = deck->top;
+    while (iter) {
+        printf("%d:%d ", iter->value, iter->suit);
+        iter = iter->below;
+    }
+    printf("\n");
+}
+
 void shuffle_deck(t_deck* deck) {
     for (int i = 0; i < 1000; i++) {
         // cut deck
@@ -381,6 +390,20 @@ int can_move(t_deck* deck1, t_deck* deck2) {
     }
 }
 
+// return 1 if card can move on top of deck2
+int can_move_card(t_card* card, t_deck* deck2) {
+    t_card* d1bottom = card;
+    t_card* d2top = deck2->top;
+    if (d2top == NULL) {
+        if (d1bottom->value == 13) { return 1 ;}
+        else { return 0; }
+    } else if (d1bottom->color != d2top->color && d1bottom->value == d2top->value-1) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 int can_top_move(t_deck* deck1, t_deck* deck2) {
     t_card* d1top = deck1->top;
     t_card* d2top = deck2->top;
@@ -558,6 +581,71 @@ int check_win(t_zones* zones) {
     return 1;
 }
 
+void output_state(t_zones* zones) {
+    output_deck(zones->draw);
+    output_deck(zones->wastes);
+    for (int i = 0; i<4; i++) {
+        output_deck(zones->foundations[i]);
+    }
+    for (int i = 0; i<7; i++) {
+        printf("%d \n", zones->tableau_facedown[i]->ncards);
+    }
+    for (int i = 0; i<7; i++) {
+        output_deck(zones->tableau_faceup[i]);
+    }
+}
+
+// Output list of possible actions in {fromdeck}:{cardsFromTop}:{todeck} format
+// fromdeck could be "D" for draw, "W" for wastes, "TN" for Nth faceup tableau, "FN" for Nth foundation
+// todeck could be "W" "TN" or "FN"
+// Examples:
+// D:0:W is the only valid option for fromdeck = D
+// T2:0:F1 means from faceup tableau 2, we can move just the first card to foundation 1
+// T0:4:T1 means from faceup tableau 0, we can move the top 5 cards to the top of tableau 1
+// F3:0:T6 means from foundation 3, we can move 1 card to the top of tableau 6
+// W:1:T4 is valid as well etc...
+void output_actions(t_zones* zones) {
+    if (zones->draw->ncards > 0) { // we can draw
+        printf("D:0:W " );
+    }
+    if (zones->wastes->ncards > 0) { // can we move wastes top anywhere?
+        for (int i = 0; i < 7; i++) {
+            if (can_top_move(zones->wastes, zones->tableau_faceup[i])) {
+                printf("W:0:T%d ", i);
+            }
+        }
+        for (int i = 0; i < 4; i++) {
+            if (can_foundation_move(zones->wastes, zones->foundations[i])) {
+                printf("W:0:F%d ", i);
+            }
+        }
+    }
+    // now check all tableaus, all positions, if we can move it
+    for (int t1 = 0; t1 < 7; t1++) {
+        t_card* card = zones->tableau_faceup[t1]->top;
+        int n = zones->tableau_faceup[t1]->ncards;
+        for (int i = 0; i < n; i++) {
+            for (int t2 = 0; t2 < 7; t2++) {
+                if (t2 != t1 && can_move_card(card, zones->tableau_faceup[t2])) {
+                    printf("T%d:%d:T%d ", t1, i, t2);
+                }
+            }
+            card = card->below;
+        }
+    }
+    // now check all top of tableaus to move to foundations
+    for (int t1 = 0; t1 < 7; t1++) {
+        for (int i = 0 ; i < 4; i++) {
+            if (can_foundation_move(zones->tableau_faceup[t1], zones->foundations[i])) {
+                printf("T%d:0:F%d ",t1,i);
+            }
+            if (zones->foundations[i]->top && can_top_move(zones->foundations[i], zones->tableau_faceup[t1])) {
+                printf("F%d:0:T%d ",i,t1);
+            }
+        }
+    }
+}
+
 // Loops the game actions with a simple decision tree of:
 // 1. Make all possible tableau moves
 // 2. Make all possible moves to foundations
@@ -578,9 +666,11 @@ int play_game(int verbose) {
 
         hasmove = 1;
         if (verbose) {
-            system("cls");
             print_zones(zones);
             printf("executing all tableau moves\n");
+            output_actions(zones);
+         
+            getchar();
         }
         while (hasmove) {
             hasmove = make_tableau_move(zones);
@@ -594,7 +684,6 @@ int play_game(int verbose) {
 
         hasmove = 1;
         if (verbose) {
-            system("cls");
             print_zones(zones);
             printf("executing all foundation moves\n");
         }
@@ -609,15 +698,10 @@ int play_game(int verbose) {
         }
 
         if (zones->draw->ncards == 0 && check_win(zones)) {
-            //system("cls");
-            //print_zones(zones);
-            //free_zones(zones);
-            //printf("win! \n");
             return 1;
         }
 
         if (verbose) {
-            system("cls");
             print_zones(zones);
             printf("Tableau moved? - %d. Foundation moved? - %d\nIf both 0, drawing 3\n", tab_move, found_move);
         }
@@ -628,7 +712,7 @@ int play_game(int verbose) {
                 flipped = 1;
             } else if (result == 1 && flipped == 1) { // we flipped and didn't find any moves. we're stuck (?)
                 printf("lose :< \n");
-                print_zones(zones);
+                output_state(zones);
                 getchar();
                 free_zones(zones);
                 return 0; // no win
@@ -637,6 +721,8 @@ int play_game(int verbose) {
 
     }
 }
+
+
 
 // It is at this point I can see that the win rate of the basic strategy implemented in play_game
 // is less than 1% - when 80% of games are winnable!
