@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <string.h>
 
 typedef struct t_card {
     int value;
@@ -556,20 +557,25 @@ void flip_deck(t_deck* deck) {
 
 // return 1 if had to flip, else 0
 int drawn(t_zones* zones, int n) { 
-    if (zones->draw->ncards == 0) { // if none left, flip over wastes
-        // printf("draw->ncards == 0. flipping over wastes \n");
-        if (zones->wastes->ncards == 0) { return 1; }
-        move_deck_part(zones->wastes, zones->draw, zones->wastes->ncards);
-        flip_deck(zones->draw);
-        return 1;
-    }
-    for (int i = 0; i < n; i++) {
-        if (zones->draw->ncards > 0) {
-            // printf("moving 1 card from draw to wastes... \n");
-            move_deck_part(zones->draw, zones->wastes, 1); 
+    if (zones->draw->ncards <= 0) {return -1; }
+    else { 
+        for (int i = 0; i < n; i++) {
+            if (zones->draw->ncards > 0) {
+                // printf("moving 1 card from draw to wastes... \n");
+                move_deck_part(zones->draw, zones->wastes, 1); 
+            }
         }
     }
     return 0;
+}
+
+int flip(t_zones* zones) {
+    if (zones->wastes->ncards <= 0 || zones->draw->ncards != 0) { return -1; }
+    else {
+        move_deck_part(zones->wastes, zones->draw, zones->wastes->ncards);
+        flip_deck(zones->draw);
+        return 0;
+    }
 }
 
 int check_win(t_zones* zones) {
@@ -595,28 +601,29 @@ void output_state(t_zones* zones) {
     }
 }
 
-// Output list of possible actions in {fromdeck}:{cardsFromTop}:{todeck} format
-// fromdeck could be "D" for draw, "W" for wastes, "TN" for Nth faceup tableau, "FN" for Nth foundation
-// todeck could be "W" "TN" or "FN"
-// Examples:
-// D:0:W is the only valid option for fromdeck = D
-// T2:0:F1 means from faceup tableau 2, we can move just the first card to foundation 1
-// T0:4:T1 means from faceup tableau 0, we can move the top 5 cards to the top of tableau 1
-// F3:0:T6 means from foundation 3, we can move 1 card to the top of tableau 6
-// W:1:T4 is valid as well etc...
+// Output list of possible actions in [ D | F | {fromdeck}:{cardsFromTop}:{todeck} ] format
+// D means draw a cards and will be an option if draw pile has cards
+// F means flip the wastes and will be an option if the draw pile has no cards
+// Otherwise, we're moving some cards around
+// fromdeck could be "W" for wastes, "TN" for Nth faceup tableau, "FN" for Nth foundation
+// todeck could be "TN" or "FN"
+// cardsFromTop is how many we're moving. if fromdeck is W or FN, this must be 1.
+// If fromdeck is TN, cardsFromTop can be > 1 but toDeck must be TN
 void output_actions(t_zones* zones) {
     if (zones->draw->ncards > 0) { // we can draw
-        printf("D:0:W " );
+        printf("D " );
+    } else {
+        printf("F ");
     }
     if (zones->wastes->ncards > 0) { // can we move wastes top anywhere?
         for (int i = 0; i < 7; i++) {
             if (can_top_move(zones->wastes, zones->tableau_faceup[i])) {
-                printf("W:0:T%d ", i);
+                printf("W:1:T%d ", i);
             }
         }
         for (int i = 0; i < 4; i++) {
             if (can_foundation_move(zones->wastes, zones->foundations[i])) {
-                printf("W:0:F%d ", i);
+                printf("W:1:F%d ", i);
             }
         }
     }
@@ -627,7 +634,7 @@ void output_actions(t_zones* zones) {
         for (int i = 0; i < n; i++) {
             for (int t2 = 0; t2 < 7; t2++) {
                 if (t2 != t1 && can_move_card(card, zones->tableau_faceup[t2])) {
-                    printf("T%d:%d:T%d ", t1, i, t2);
+                    printf("T%d:%d:T%d ", t1, i+1, t2);
                 }
             }
             card = card->below;
@@ -637,13 +644,14 @@ void output_actions(t_zones* zones) {
     for (int t1 = 0; t1 < 7; t1++) {
         for (int i = 0 ; i < 4; i++) {
             if (can_foundation_move(zones->tableau_faceup[t1], zones->foundations[i])) {
-                printf("T%d:0:F%d ",t1,i);
+                printf("T%d:1:F%d ",t1,i);
             }
             if (zones->foundations[i]->top && can_top_move(zones->foundations[i], zones->tableau_faceup[t1])) {
-                printf("F%d:0:T%d ",i,t1);
+                printf("F%d:1:T%d ",i,t1);
             }
         }
     }
+    printf("\n");
 }
 
 // Loops the game actions with a simple decision tree of:
@@ -713,7 +721,6 @@ int play_game(int verbose) {
             } else if (result == 1 && flipped == 1) { // we flipped and didn't find any moves. we're stuck (?)
                 printf("lose :< \n");
                 output_state(zones);
-                getchar();
                 free_zones(zones);
                 return 0; // no win
             }
@@ -722,7 +729,77 @@ int play_game(int verbose) {
     }
 }
 
+int execute_move(char* move, t_zones* zones) {
+    if (move[0] == 'D') {
+        drawn(zones, 1);
+        return 0;
+    } else if (move[0] == 'F') {
+        flip(zones);
+        return 0;
+    }
+    // We are moving cards, either from wastes, tableau, or foundations
+    // to somewher eon tableau or foundations. parse out the from and to decks
 
+    char tok1[4]; // buffer for parsing out token 1 (the from location)
+    char tok2[4]; // 
+    char tok3[4];
+    strcpy(tok1, strtok(move, ":")); // copy out the tokens
+    strcpy(tok2, strtok(NULL, ":"));
+    strcpy(tok3, strtok(NULL, ":"));
+
+    t_deck* from_deck;
+    t_deck* to_deck;
+    if (tok1[0] == 'W') {
+        from_deck = zones->wastes; 
+    } else if (tok1[0] == 'T') {
+        from_deck = zones->tableau_faceup[atoi(tok1+1)];
+    } else if (tok1[0] == 'F') {
+        from_deck = zones->foundations[atoi(tok1+1)];
+    } else {return -1; }
+
+    if (tok3[0] == 'T') {
+        to_deck = zones->tableau_faceup[atoi(tok3+1)];
+    } else if (tok3[0] == 'F') {
+        to_deck = zones->foundations[atoi(tok3+1)];
+    } else {return -1; }
+
+    int n_cards = atoi(tok2);
+
+    move_deck_part(from_deck, to_deck, n_cards); // move it
+    // for now, I'm trusting that the from,to,ncards here represents a legal
+    // solitaire move, since in theory, the agent should only ever
+    // select actions from the list provided by output_actions, which 
+    // should all be legal moves.
+
+    // If fromdeck was on tableau, check if a facedown card needs to flip
+    if (tok1[0] == 'T') {
+        int i = atoi(tok1+1);
+        if (zones->tableau_faceup[i]->ncards == 0 && zones->tableau_facedown[i]->ncards > 0) {
+            move_deck_part(zones->tableau_facedown[i], zones->tableau_faceup[i], 1);
+        }
+    }
+    return 0;
+}
+
+int bot_play_game() {
+    t_zones* zones = init_zones();
+    fill_tableau(zones);
+
+    char move[32]; // formatted move string from input (ex T1:0:F2)
+    while (1) {
+        // 1. Output state and legal actions
+        output_state(zones);
+        output_actions(zones);
+
+        // 2. Get the action from command line
+        fgets(move, 32, stdin); // get move string from stdin
+        
+        // 3. Execute action
+        execute_move(move, zones);
+    }
+
+    free_zones(zones);
+}
 
 // It is at this point I can see that the win rate of the basic strategy implemented in play_game
 // is less than 1% - when 80% of games are winnable!
@@ -737,6 +814,7 @@ int main(int argc, char **argv) {
     
     srand(time(NULL));
     
+    /**
     int wins = 0;
     int ngames = 10000;
     for (int i = 0; i < ngames; i++) {
@@ -744,6 +822,9 @@ int main(int argc, char **argv) {
     }
 
     printf("Won %d games out of %d\n%.4lf winrate", wins, ngames, (double) wins / (double) ngames);
-    
+    */
+    int ret;
+    ret = bot_play_game();
+    printf("game over, ret = %d\n", ret);
     return 0;
 }
