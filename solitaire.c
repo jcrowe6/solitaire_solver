@@ -786,6 +786,7 @@ int bot_play_game() {
     fill_tableau(zones);
 
     char move[32]; // formatted move string from input (ex T1:0:F2)
+    
     while (1) {
         // 1. Output state and legal actions
         output_state(zones);
@@ -811,7 +812,7 @@ int bot_play_game() {
 int main(int argc, char **argv) {
     int verbose = 0;
     if (argc > 1 && argv[1][0] == 'v') { verbose = 1; }
-    
+    setbuf(stdout, NULL);
     srand(time(NULL));
     
     /**
@@ -823,8 +824,16 @@ int main(int argc, char **argv) {
 
     printf("Won %d games out of %d\n%.4lf winrate", wins, ngames, (double) wins / (double) ngames);
     */
+    
     int ret;
     ret = bot_play_game();
     printf("game over, ret = %d\n", ret);
+    
+    /**
+    char move[32]; // formatted move string from input (ex T1:0:F2)
+    
+    fgets(move, 32, stdin);
+    printf("hello\n");
+    */
     return 0;
 }
