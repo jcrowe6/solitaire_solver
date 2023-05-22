@@ -7,6 +7,7 @@ typedef struct t_card {
     int value;
     int suit;
     int color;
+    int id; // this will be used to uniquely identify each card for easily describing state for RL
     struct t_card* below; // pointer to card that this card is on top of, NULL if it's just sitting on the table
     struct t_card* above; // pointer to card above this card, NULL if none
 } t_card;
@@ -40,6 +41,7 @@ t_deck* init_deck() {
             cards[pos].value = v;
             cards[pos].suit = s;
             cards[pos].color = s % 2;
+            cards[pos].id = pos;
             cards[pos].above = cards+pos-1;
             cards[pos].below = cards+pos+1;
             if (pos == 0) {
@@ -86,7 +88,6 @@ void move_deck_part(t_deck* fromdeck, t_deck* todeck, int n) {
     }
     // 2 cases: move_bottom->below = NULL and != NULL
     // 2 more cases, todeck->top = NULL and != NULL
-
 
     if (todeck->top == NULL) {
         if (move_bottom->below == NULL) { // from deck will be empty and todeck is empty
@@ -169,7 +170,8 @@ void print_deck(t_deck* deck) {
 void output_deck(t_deck* deck) {
     t_card* iter = deck->top;
     while (iter) {
-        printf("%d:%d ", iter->value, iter->suit);
+        // printf("%d:%d ", iter->suit, iter->value); // if human readable mode
+        printf("%d ", iter->id);
         iter = iter->below;
     }
     printf("\n");
@@ -593,15 +595,15 @@ void output_state(t_zones* zones) {
     for (int i = 0; i<4; i++) {
         output_deck(zones->foundations[i]);
     }
-    for (int i = 0; i<7; i++) {
-        printf("%d \n", zones->tableau_facedown[i]->ncards);
-    }
+    //for (int i = 0; i<7; i++) {
+    //    printf("%d \n", zones->tableau_facedown[i]->ncards);
+    //}
     for (int i = 0; i<7; i++) {
         output_deck(zones->tableau_faceup[i]);
     }
 }
 
-// Output list of possible actions in [ D | F | {fromdeck}:{cardsFromTop}:{todeck} ] format
+// Output list of possible actions in [ D | L | {fromdeck}:{cardsFromTop}:{todeck} ] format
 // D means draw a cards and will be an option if draw pile has cards
 // F means flip the wastes and will be an option if the draw pile has no cards
 // Otherwise, we're moving some cards around
@@ -609,21 +611,88 @@ void output_state(t_zones* zones) {
 // todeck could be "TN" or "FN"
 // cardsFromTop is how many we're moving. if fromdeck is W or FN, this must be 1.
 // If fromdeck is TN, cardsFromTop can be > 1 but toDeck must be TN
+//
+// PSYCHE! This format is hard for a computer to read fast and well, hard for people as well.
+// Might as well have each action have a number associated according to the following formula:
+// Draw = 0
+// Flip = 1
+// Move from wastes to tableau = 2 + tableau number
+// Move from wastes to foundation = 9 + foundation number
+// Move X cards from TA to TB where A!=B = 13 + 13*6*A + 13*B' + (X-1) where B' = B if B<A and B-1 otherwise
+// Ex:
+// mv 1 card from T0 to T1: 13+0+0+0 = 13.
+// mv 13 cards =     =    : 13+0+0+12= 25
+// mv 1 card from T0 to T2: 13+0+13+0= 26
+// mv 13 cards =     =    : 13+0+13+12=38
+// mv 13 cards from T0 >T6: 13+0+65+12=90
+// mv 1 card from T1 to T0: 13+78+0+0= 91
+// mv 1 card from T1 to T2: 13+78+13+0=104
+// ...
+// mv 13 cards from T6> T5: 13+468+65+12 = 558
+// Move a card from TA to FB = 559 + 4*A + B
+// mv a card from T6 to F3 = 559+4*6+3 = 586
+// Move a card from FB to TA = 587 + 4*A + B
+// mv a card from F3 to T6 = 587+4*6+3 = 614 
+// Which matches up! 615 moves!
+// got dam though. Definitely want some helper funcs
+
+// this func was kind of a mistake. I'm realizing why would I even deal with string moves at all 
+// if i can just have numbers everywhere and cut out the overhead of converting strings every move.
+// so I'm just converting the action output func to output the numbers and execute using numbers
+
+int move_to_num(char* move) {
+    if (move[0] == 'D') {
+        return 0;
+    } else if (move[0] == 'L') {
+        return 1;
+    }
+    // We are moving cards, either from wastes, tableau, or foundations
+    // to somewher eon tableau or foundations. parse out the from and to decks
+    
+    char tok1[4]; // buffer for parsing out token 1 (the from location)
+    char tok2[4]; // 
+    char tok3[4];
+    strcpy(tok1, strtok(move, ":")); // copy out the tokens
+    strcpy(tok2, strtok(NULL, ":"));
+    strcpy(tok3, strtok(NULL, ":"));
+
+    if (tok1[0] == 'W') { // from wastes
+        
+        if (tok3[0] == 'T') {
+            return 2+atoi(tok3+1);
+        } else {
+            return 9+atoi(tok3+1);
+        }
+    } else if (tok1[0] == 'F') { // from foundations
+        return 587 + 4*atoi(tok3+1) + atoi(tok1+1);
+    } else if (tok1[0] == 'T') { // from tableau
+        if (tok3[0] == 'F') { // to foundations
+            return 559 + 4*atoi(tok1+1) + atoi(tok3+1);
+        }
+        // to another tableau
+        int A = atoi(tok1+1);
+        int B = atoi(tok3+1);
+        int X = atoi(tok2);
+        if (B >= A) {B = B - 1;}
+        return 13 + 13*6*A + 13*B + (X-1);
+    }
+}
+
 void output_actions(t_zones* zones) {
     if (zones->draw->ncards > 0) { // we can draw
-        printf("D " );
+        printf("0 " );
     } else {
-        printf("F ");
+        printf("1 ");
     }
     if (zones->wastes->ncards > 0) { // can we move wastes top anywhere?
         for (int i = 0; i < 7; i++) {
             if (can_top_move(zones->wastes, zones->tableau_faceup[i])) {
-                printf("W:1:T%d ", i);
+                printf("%d ", 2+i);
             }
         }
         for (int i = 0; i < 4; i++) {
             if (can_foundation_move(zones->wastes, zones->foundations[i])) {
-                printf("W:1:F%d ", i);
+                printf("%d ", 9+i);
             }
         }
     }
@@ -634,7 +703,10 @@ void output_actions(t_zones* zones) {
         for (int i = 0; i < n; i++) {
             for (int t2 = 0; t2 < 7; t2++) {
                 if (t2 != t1 && can_move_card(card, zones->tableau_faceup[t2])) {
-                    printf("T%d:%d:T%d ", t1, i+1, t2);
+                    // 13 + 13*6*A + 13*B' + (X-1) where B' = B if B<A and B-1 otherwise
+                    int b = t2;
+                    if (b >= t1) { b = b - 1; }
+                    printf("%d ", 13 + 13*6*t1 + 13*b + i);
                 }
             }
             card = card->below;
@@ -644,10 +716,10 @@ void output_actions(t_zones* zones) {
     for (int t1 = 0; t1 < 7; t1++) {
         for (int i = 0 ; i < 4; i++) {
             if (can_foundation_move(zones->tableau_faceup[t1], zones->foundations[i])) {
-                printf("T%d:1:F%d ",t1,i);
+                printf("%d ", 559 + 4*t1 + i);
             }
             if (zones->foundations[i]->top && can_top_move(zones->foundations[i], zones->tableau_faceup[t1])) {
-                printf("F%d:1:T%d ",i,t1);
+                printf("%d ", 587 + 4*t1 + i);
             }
         }
     }
@@ -733,7 +805,7 @@ int execute_move(char* move, t_zones* zones) {
     if (move[0] == 'D') {
         drawn(zones, 1);
         return 0;
-    } else if (move[0] == 'F') {
+    } else if (move[0] == 'L') {
         flip(zones);
         return 0;
     }
@@ -781,6 +853,45 @@ int execute_move(char* move, t_zones* zones) {
     return 0;
 }
 
+int execute_num_move(int move, t_zones* zones) {
+    if (move < 1) {
+        drawn(zones, 1);
+    } else if (move < 2) {
+        flip(zones);
+    } else if (move < 9) { // 1 card from wastes to tableau
+        move_deck_part(zones->wastes, zones->tableau_faceup[move-2], 1);
+    } else if (move < 13) { // 1 card from wastes to foundations
+        move_deck_part(zones->wastes, zones->foundations[move-9], 1);
+    } else if (move < 559) { // x cards from tableau to tableau
+        int base = move - 13; 
+        int A = base / (13*6); 
+        int r1 = base % (13*6);
+        int B = r1 / 13;
+        if (B >= A) {B += 1;}
+        int X = (r1 % 13) + 1; 
+        move_deck_part(zones->tableau_faceup[A], zones->tableau_faceup[B], X);
+
+        if (zones->tableau_faceup[A]->ncards == 0 && zones->tableau_facedown[A]->ncards > 0) {
+            move_deck_part(zones->tableau_facedown[A], zones->tableau_faceup[A], 1);
+        }
+    } else if (move < 587) {
+        int base = move - 559;
+        int A = base / 4;
+        int B = base % 4;
+        move_deck_part(zones->tableau_faceup[A], zones->foundations[B], 1);
+
+        if (zones->tableau_faceup[A]->ncards == 0 && zones->tableau_facedown[A]->ncards > 0) {
+            move_deck_part(zones->tableau_facedown[A], zones->tableau_faceup[A], 1);
+        }
+    } else {
+        int base = move - 587;
+        int A = base / 4;
+        int B = base % 4;
+        move_deck_part(zones->foundations[B], zones->tableau_faceup[A], 1);
+    }
+    return 0;
+}
+
 int bot_play_game() {
     t_zones* zones = init_zones();
     fill_tableau(zones);
@@ -796,10 +907,58 @@ int bot_play_game() {
         fgets(move, 32, stdin); // get move string from stdin
         
         // 3. Execute action
-        execute_move(move, zones);
+        execute_num_move(atoi(move), zones);
     }
 
     free_zones(zones);
+}
+
+void test_movetonum() {
+    // Move from wastes to tableau = 2 + tableau number
+    // Move from wastes to foundation = 9 + foundation number
+    // Move X cards from TA to TB where A!=B = 13 + 13*6*A + 13*B' + (X-1) where B' = B if B<A and B-1 otherwise
+    // Ex:
+    // mv 1 card from T0 to T1: 13+0+0+0 = 13.
+    // mv 13 cards =     =    : 13+0+0+12= 25
+    // mv 1 card from T0 to T2: 13+0+13+0= 26
+    // mv 13 cards =     =    : 13+0+13+12=38
+    // mv 13 cards from T0 >T6: 13+0+65+12=90
+    // mv 1 card from T1 to T0: 13+78+0+0= 91
+    // mv 1 card from T1 to T2: 13+78+13+0=104
+    // ...
+    // mv 13 cards from T6> T5: 13+468+65+12 = 558
+    // Move a card from TA to FB = 559 + 4*A + B
+    // mv a card from T6 to F3 = 559+4*6+3 = 586
+    // Move a card from FB to TA = 587 + 4*A + B
+    // mv a card from F3 to T6 = 587+4*6+3 = 614 
+    char* tests[10];
+    int ans[10];
+    char* s = malloc(50);
+    tests[0] = "D";
+    ans[0] = 0;
+    tests[1] = "L";
+    ans[1] = 1;
+    tests[2] = "W:1:T2";
+    ans[2] = 4;
+    tests[3] = "W:1:F3";
+    ans[3] = 12;
+    tests[4] = "T0:1:T1";
+    ans[4] = 13;
+    tests[5] = "T0:13:T6";
+    ans[5] = 90;
+    tests[6] = "T1:1:T0";
+    ans[6] = 91;
+    tests[7] = "T6:13:T5";
+    ans[7] = 558;
+    tests[8] = "T4:1:F1";
+    ans[8] = 559+16+1;
+    tests[9] = "F3:1:T6";
+    ans[9] = 587+4*6+3;
+    for (int i = 0; i < 10; i++) {
+        printf(tests[i]);
+        strcpy(s, tests[i]);
+        printf(" exp: %d, got: %d\n", ans[i], move_to_num(s));
+    }
 }
 
 // It is at this point I can see that the win rate of the basic strategy implemented in play_game
@@ -825,15 +984,11 @@ int main(int argc, char **argv) {
     printf("Won %d games out of %d\n%.4lf winrate", wins, ngames, (double) wins / (double) ngames);
     */
     
+    
     int ret;
     ret = bot_play_game();
     printf("game over, ret = %d\n", ret);
     
-    /**
-    char move[32]; // formatted move string from input (ex T1:0:F2)
-    
-    fgets(move, 32, stdin);
-    printf("hello\n");
-    */
+
     return 0;
 }
