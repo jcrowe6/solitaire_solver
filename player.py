@@ -52,8 +52,21 @@ class SolitaireEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         self.process = sp.Popen("./solitaire.exe", stdin=sp.PIPE, stdout=sp.PIPE, text=True, bufsize=0, encoding='ascii')
+        return self.proc_read_state()
+    
+    def step(self, action):
+        self.process.stdin.write(f"{action}\n")
+        state,actions = self.proc_read_state()
+        terminated = False
+        if (len(state['f0']) == 13 and
+            len(state['f1']) == 13 and
+            len(state['f2']) == 13 and 
+            len(state['f3']) == 13):
+            terminated = True
+        reward = 1 if terminated else 0
 
-
+        return state, reward, terminated, False, actions
+        
 
     def close(self):
         self.process.kill()
