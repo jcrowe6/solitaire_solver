@@ -33,17 +33,17 @@ class SolitaireEnv(gym.Env):
             {
                 "draw": self.readline_to_list(), 
                 "wastes": self.readline_to_list(), 
+                "f0": self.readline_to_list(), # foundations 
+                "f1": self.readline_to_list(),
+                "f2": self.readline_to_list(),
+                "f3": self.readline_to_list(),
                 "t0": self.readline_to_list(), # faceup tableaus 
                 "t1": self.readline_to_list(), 
                 "t2": self.readline_to_list(), 
                 "t3": self.readline_to_list(),
                 "t4": self.readline_to_list(),
                 "t5": self.readline_to_list(),
-                "t6": self.readline_to_list(), 
-                "f0": self.readline_to_list(), # foundations 
-                "f1": self.readline_to_list(),
-                "f2": self.readline_to_list(),
-                "f3": self.readline_to_list()
+                "t6": self.readline_to_list()
             },
             {
                 "actions": self.readline_to_list()
@@ -70,10 +70,14 @@ class SolitaireEnv(gym.Env):
 
     def close(self):
         self.process.kill()
+
+
 senv = SolitaireEnv()
 
-senv.reset()
+state,acts = senv.reset()
 
-state,actions = senv.proc_read_state()
-print(state)
-print(actions)
+while(1):
+    print(state)
+    print(acts)
+    act = input()
+    state,r,t,tr,acts = senv.step(act)
