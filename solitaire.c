@@ -715,7 +715,7 @@ void output_actions(t_zones* zones) {
     // now check all top of tableaus to move to foundations
     for (int t1 = 0; t1 < 7; t1++) {
         for (int i = 0 ; i < 4; i++) {
-            if (can_foundation_move(zones->tableau_faceup[t1], zones->foundations[i])) {
+            if (zones->tableau_faceup[t1]->ncards && can_foundation_move(zones->tableau_faceup[t1], zones->foundations[i])) { 
                 printf("%d ", 559 + 4*t1 + i);
             }
             if (zones->foundations[i]->top && can_top_move(zones->foundations[i], zones->tableau_faceup[t1])) {
@@ -972,8 +972,9 @@ int main(int argc, char **argv) {
     int verbose = 0;
     if (argc > 1 && argv[1][0] == 'v') { verbose = 1; }
     setbuf(stdout, NULL);
-    srand(time(NULL));
-    
+    //srand(time(NULL));
+    srand(1);
+
     /**
     int wins = 0;
     int ngames = 10000;
